@@ -10,4 +10,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  preview: {
+    middlewareMode: false,
+  },
+  server: {
+    middlewareMode: false,
+  },
 });

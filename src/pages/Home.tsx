@@ -89,6 +89,18 @@ export default function Home() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  // Admin panel keyboard shortcut (Ctrl+Shift+A)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        window.location.href = "/admin";
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const amenities = [
     { icon: Wifi, name: t("amenities.wifi"), description: t("amenities.wifi_desc") },
     { icon: Wind, name: t("amenities.ac"), description: t("amenities.ac_desc") },
