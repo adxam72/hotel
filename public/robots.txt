@@ -1,0 +1,31 @@
+# Hotel Istiqlol Website Robots Configuration
+# Allow all search engines to crawl the entire website
+
+User-agent: *
+Allow: /
+Allow: /api/
+
+# Disallow admin panel from search engines
+Disallow: /admin
+
+# Disallow private directories
+Disallow: /private/
+Disallow: /.env
+
+# Crawl delay for all bots (in seconds)
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://hotel-istiqlol.tj/sitemap.xml
+
+# Specific rules for Googlebot
+User-agent: Googlebot
+Allow: /
+Allow: /api/
+Disallow: /admin
+
+# Specific rules for Bingbot
+User-agent: Bingbot
+Allow: /
+Allow: /api/
+Disallow: /admin
