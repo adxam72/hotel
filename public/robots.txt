@@ -16,7 +16,7 @@ Disallow: /.env
 Crawl-delay: 1
 
 # Sitemap location
-Sitemap: https://hotel-nine-theta.vercel.app/sitemap.xml
+Sitemap: https://istiqlol.org/sitemap.xml
 
 # Specific rules for Googlebot
 User-agent: Googlebot
