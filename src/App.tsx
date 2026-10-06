@@ -6,7 +6,9 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import Home from "./pages/Home";
-import AdminPanel from "./pages/AdminPanel";
+import { lazy, Suspense } from "react";
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+import { MotionConfig } from "motion/react";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -35,7 +37,7 @@ function App() {
         >
           <TooltipProvider>
             <Toaster />
-            <Router />
+            <MotionConfig reducedMotion="user"><Suspense fallback={<div className="min-h-screen bg-background" />}><Router /></Suspense></MotionConfig>
           </TooltipProvider>
         </ThemeProvider>
       </LanguageProvider>

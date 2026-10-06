@@ -1,5 +1,8 @@
-node_modules
-dist
-.env
-.env.local
+node_modules/
+dist/
+.npm-cache/
+.browser-check/
 *.local
+.env
+.env.*
+!.env.example

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 type Language = "uz" | "ru" | "en";
 
@@ -12,9 +12,9 @@ const translations = {
   uz: {
     // Navigation
     "nav.rooms": "Xonalar",
-    "nav.amenities": "Xususiyatlar",
+    "nav.amenities": "Qulayliklar",
     "nav.location": "Joylashuvi",
-    "nav.reviews": "Sharhlari",
+    "nav.reviews": "Sharhlar",
 
     // Hero
     "hero.title": "Hotel Istiqlol",
@@ -30,7 +30,7 @@ const translations = {
 
     // Rooms
     "rooms.title": "Bizning Xonalar",
-    "rooms.subtitle": "Har bir xona sizning rahatligi uchun maxsus tayyorlangan",
+    "rooms.subtitle": "Har bir xona sizning qulay dam olishingiz uchun tayyorlangan.",
     "rooms.deluxe": "Deluxe Xona",
     "rooms.deluxe_desc": "Yuqori darajali xona, katta oyna, zamonaviy jihozlar",
     "rooms.standard": "Standard Xona",
@@ -41,14 +41,14 @@ const translations = {
     "rooms.bathroom": "✓ Xususiy hammom",
 
     // Amenities
-    "amenities.title": "Xususiyatlar",
+    "amenities.title": "Qulayliklar",
     "amenities.subtitle": "Sizning qulay bo'lishingiz uchun barcha zaruriy xizmatlar",
     "amenities.wifi": "Bepul Wi-Fi",
     "amenities.wifi_desc": "Barcha xonalarda",
     "amenities.ac": "Konditsioner",
     "amenities.ac_desc": "Zamonaviy sistema",
-    "amenities.card": "Karta to'lash",
-    "amenities.card_desc": "Barcha kartalar qabul",
+    "amenities.card": "Karta orqali to‘lov",
+    "amenities.card_desc": "Qulay va oson to‘lov",
     "amenities.restaurant": "Restoran",
     "amenities.restaurant_desc": "Milliy taomlar",
 
@@ -58,7 +58,7 @@ const translations = {
     "location.address": "Manzil",
     "location.address_value": "Qashqadaryo viloyati, Dehqonobod tumani, Karashina shahar",
     "location.phone": "Telefon",
-    "location.route": "Marshrut boshlash",
+    "location.route": "Yo‘l ko‘rsatish",
 
     // Contact
     "contact.title": "Bizga Bog'lanish",
@@ -238,16 +238,20 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("language");
-      return (saved as Language) || "uz";
+      try {
+        const saved = localStorage.getItem("language");
+        if (saved === "uz" || saved === "ru" || saved === "en") return saved;
+      } catch { /* Use Uzbek when browser storage is unavailable. */ }
     }
     return "uz";
   });
 
   const handleSetLanguage = (lang: Language) => {
     setLanguage(lang);
-    localStorage.setItem("language", lang);
+    try { localStorage.setItem("language", lang); } catch { /* Language switching still works without storage. */ }
   };
+
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
 
   const t = (key: string): string => {
     return (translations[language] as any)[key] ?? key;

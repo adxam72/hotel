@@ -23,87 +23,14 @@ import {
   TrendingUp,
   Calendar,
 } from "lucide-react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { getAnalytics, getTodayVisits, getWeekVisits, getMonthVisits, getLast7Days } from "@/lib/analytics";
+import HotelSettingsEditor from "@/components/HotelSettingsEditor";
+import { loadRooms, loadReviews, saveRooms, saveReviews, validImage, type RoomData } from "@/lib/hotel";
+import type { Review } from "@/lib/reviews-data";
+import { readImage } from "@/lib/media";
 
 const ADMIN_PASSWORD = "istiqlol2026";
-
-interface RoomData {
-  id: string;
-  name: string;
-  description: string;
-  image: string;
-  images?: string[];
-  videos?: string[];
-}
-
-interface Review {
-  id: string;
-  name: string;
-  rating: number;
-  date: string;
-  text: string;
-  isNew?: boolean;
-}
-
-function loadRooms(): RoomData[] {
-  try {
-    const saved = localStorage.getItem("hotel_rooms");
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return [
-    {
-      id: "deluxe",
-      name: "Deluxe Xona",
-      description: "Yuqori darajali xona, katta oyna, zamonaviy jihozlar",
-      image: "https://avatars.mds.yandex.net/get-altay/5098065/2a00000181967c2e529094fc8b7196c16543/XXL_height",
-    },
-    {
-      id: "standard",
-      name: "Standard Xona",
-      description: "Qulay, toza, zamonaviy dizayn bilan",
-      image: "https://avatars.mds.yandex.net/get-altay/6057477/2a000001819974311cd47c77a79eece7fac1/XXL_height",
-    },
-  ];
-}
-
-function loadReviews(): Review[] {
-  try {
-    const saved = localStorage.getItem("hotel_reviews");
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return [
-    {
-      id: "1",
-      name: "Mikhail",
-      rating: 5,
-      date: "24-mart, 2023",
-      text: "Neplokhoe sochetanie tseny/kachestva. Administrator prekrasno govorit po russki.",
-    },
-    {
-      id: "2",
-      name: "Kostya Zyubin",
-      rating: 3,
-      date: "21-oktyabr', 2025",
-      text: "Gostineca polnyy bardak vonaet v komnatakh.",
-    },
-    {
-      id: "3",
-      name: "Konstantin Volkov",
-      rating: 4,
-      date: "15-iyulya, 2024",
-      text: "Mylo i shampun' dali 'skreplya serdtsem', v vanne vonaet.",
-    },
-  ];
-}
-
-function saveRooms(rooms: RoomData[]) {
-  localStorage.setItem("hotel_rooms", JSON.stringify(rooms));
-}
-
-function saveReviews(reviews: Review[]) {
-  localStorage.setItem("hotel_reviews", JSON.stringify(reviews));
-}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -155,6 +82,7 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
               />
               <button
                 type="button"
+                aria-label={showPassword ? "Parolni yashirish" : "Parolni ko‘rsatish"}
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
@@ -317,8 +245,8 @@ function RoomEditor({
       toast.error("Rasm 5MB dan katta bo'lmasligi kerak");
       return;
     }
-    const base64 = await fileToBase64(file);
-    setImage(base64);
+    try { setImage(await readImage(file)); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Rasm yuklanmadi"); }
   };
 
   const handleGalleryImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,7 +258,8 @@ function RoomEditor({
         toast.error(`${file.name} — 5MB dan katta`);
         continue;
       }
-      newImages.push(await fileToBase64(file));
+      try { newImages.push(await readImage(file)); }
+      catch (error) { toast.error(error instanceof Error ? error.message : "Rasm yuklanmadi"); }
     }
     setImages([...images, ...newImages]);
   };
@@ -354,8 +283,8 @@ function RoomEditor({
       toast.error("Nom va tavsifni to'ldiring");
       return;
     }
-    if (!image) {
-      toast.error("Asosiy rasmni yuklang");
+    if (!validImage(image)) {
+      toast.error("Asosiy rasmni yuklang yoki to‘g‘ri rasm havolasini kiriting");
       return;
     }
     onSave({
@@ -372,7 +301,7 @@ function RoomEditor({
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold">{room ? "Xonani tahrirlash" : "Yangi xona qo'shish"}</h3>
-        <button onClick={onCancel} className="p-2 hover:bg-secondary/20 rounded-lg">
+        <button aria-label="Muharrirni yopish" onClick={onCancel} className="p-2 hover:bg-secondary/20 rounded-lg">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -380,22 +309,24 @@ function RoomEditor({
       <div className="space-y-4">
         <div>
           <label className="text-sm font-semibold mb-2 block">Xona nomi</label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Masalan: Deluxe Xona" />
+          <Input aria-label="Xona nomi" value={name} onChange={(e) => setName(e.target.value)} placeholder="Masalan: Deluxe Xona" />
         </div>
 
         <div>
           <label className="text-sm font-semibold mb-2 block">Tavsif</label>
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Xona haqida qisqa ma'lumot" rows={3} />
+          <Textarea aria-label="Xona tavsifi" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Xona haqida qisqa ma'lumot" rows={3} />
         </div>
 
         {/* Main Image */}
         <div>
           <label className="text-sm font-semibold mb-2 block">Asosiy rasm</label>
+          <Input aria-label="Xona rasmi havolasi" value={image.startsWith("data:") ? "" : image} onChange={e => setImage(e.target.value)} placeholder="Rasm havolasi: https://…" className="mb-3" />
           <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleMainImage} />
           {image ? (
             <div className="relative">
               <img src={image} alt="Asosiy" className="w-full h-48 object-cover rounded-lg" />
               <button
+                aria-label="Asosiy rasmni almashtirish"
                 onClick={() => imageInputRef.current?.click()}
                 className="absolute bottom-2 right-2 bg-white/90 hover:bg-white p-2 rounded-lg shadow"
               >
@@ -422,6 +353,7 @@ function RoomEditor({
               <div key={i} className="relative group">
                 <img src={img} alt="" className="w-full h-24 object-cover rounded-lg" />
                 <button
+                  aria-label={`${i + 1}-rasmni olib tashlash`}
                   onClick={() => setImages(images.filter((_, idx) => idx !== i))}
                   className="absolute top-1 right-1 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                 >
@@ -430,6 +362,7 @@ function RoomEditor({
               </div>
             ))}
             <button
+              aria-label="Qo‘shimcha rasmlar yuklash"
               onClick={() => galleryInputRef.current?.click()}
               className="h-24 border-2 border-dashed border-border rounded-lg flex items-center justify-center hover:border-primary hover:bg-primary/5 transition-colors"
             >
@@ -447,6 +380,7 @@ function RoomEditor({
               <div key={i} className="relative group">
                 <video src={vid} className="w-full h-32 object-cover rounded-lg" controls />
                 <button
+                  aria-label={`${i + 1}-videoni olib tashlash`}
                   onClick={() => setVideos(videos.filter((_, idx) => idx !== i))}
                   className="absolute top-1 right-1 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                 >
@@ -478,23 +412,19 @@ function RoomEditor({
 }
 
 // --- Main Admin Panel ---
-type Tab = "stats" | "rooms" | "reviews";
+type Tab = "hotel" | "stats" | "rooms" | "reviews";
 
 export default function AdminPanel() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem("admin_auth") === "true");
-  const [tab, setTab] = useState<Tab>("stats");
+  const [tab, setTab] = useState<Tab>("hotel");
   const [rooms, setRooms] = useState<RoomData[]>(loadRooms);
   const [reviews, setReviews] = useState<Review[]>(loadReviews);
   const [editingRoom, setEditingRoom] = useState<RoomData | null>(null);
   const [isAdding, setIsAdding] = useState(false);
 
-  useEffect(() => {
-    saveRooms(rooms);
-  }, [rooms]);
 
-  useEffect(() => {
-    saveReviews(reviews);
-  }, [reviews]);
+
+
 
   const handleLogout = () => {
     sessionStorage.removeItem("admin_auth");
@@ -503,34 +433,32 @@ export default function AdminPanel() {
 
   const handleSaveRoom = (room: RoomData) => {
     const exists = rooms.find((r) => r.id === room.id);
-    if (exists) {
-      setRooms(rooms.map((r) => (r.id === room.id ? room : r)));
-      toast.success("Xona yangilandi");
-    } else {
-      setRooms([...rooms, room]);
-      toast.success("Yangi xona qo'shildi");
-    }
+    const updated = exists ? rooms.map(r => r.id === room.id ? room : r) : [...rooms, room];
+    try { saveRooms(updated); setRooms(updated); }
+    catch { toast.error("Saqlash uchun joy yetarli emas. Kichikroq rasmlar yoki rasm havolasidan foydalaning."); return; }
+    toast.success(exists ? "Xona yangilandi" : "Yangi xona qo'shildi");
     setEditingRoom(null);
     setIsAdding(false);
   };
 
   const handleDeleteRoom = (id: string) => {
     if (!confirm("Bu xonani o'chirishni tasdiqlaysizmi?")) return;
-    setRooms(rooms.filter((r) => r.id !== id));
-    toast.success("Xona o'chirildi");
+    const updated = rooms.filter(r => r.id !== id);
+    try { saveRooms(updated); setRooms(updated); toast.success("Xona o'chirildi"); }
+    catch { toast.error("Saqlash amalga oshmadi"); }
   };
 
   const handleDeleteReview = (id: string) => {
     if (!confirm("Bu sharhni o'chirishni tasdiqlaysizmi?")) return;
-    setReviews(reviews.filter((r) => r.id !== id));
-    toast.success("Sharh o'chirildi");
+    const updated = reviews.filter(r => r.id !== id);
+    try { saveReviews(updated); setReviews(updated); toast.success("Sharh o'chirildi"); }
+    catch { toast.error("Saqlash amalga oshmadi"); }
   };
 
   if (!authed) return <LoginForm onLogin={() => setAuthed(true)} />;
 
   return (
-    <div className="min-h-screen bg-background">
-      <Toaster />
+    <div className="admin-page">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-border shadow-sm">
         <div className="container flex items-center justify-between h-14 px-4">
@@ -551,6 +479,7 @@ export default function AdminPanel() {
       {/* Tabs */}
       <div className="container px-4 pt-6">
         <div className="flex gap-2 mb-6 overflow-x-auto">
+          <button onClick={() => setTab("hotel")} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors whitespace-nowrap ${tab === "hotel" ? "bg-primary text-white" : "bg-secondary/20 text-foreground hover:bg-secondary/30"}`}><Home className="w-4 h-4" /> Mehmonxona</button>
           <button
             onClick={() => setTab("stats")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors whitespace-nowrap ${
@@ -577,6 +506,7 @@ export default function AdminPanel() {
           </button>
         </div>
 
+        {tab === "hotel" && <HotelSettingsEditor />}
         {/* Stats Tab */}
         {tab === "stats" && <StatsTab />}
 
@@ -626,6 +556,7 @@ export default function AdminPanel() {
                             <Edit3 className="w-4 h-4 mr-1" /> Tahrirlash
                           </Button>
                           <Button
+                            aria-label={`${room.name} xonasini o‘chirish`}
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteRoom(room.id)}

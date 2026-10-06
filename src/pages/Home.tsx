@@ -1,490 +1,150 @@
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { MapPin, Phone, Wifi, Wind, CreditCard, Star, X, Copy, Check } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import ReviewsSection from "@/components/ReviewsSection";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import { ArrowDown, ArrowRight, ArrowUpRight, BedDouble, Check, ChevronLeft, ChevronRight, Copy, CreditCard, Images, MapPin, Menu, Phone, Wifi, Wind, X } from "lucide-react";
+import { toast } from "sonner";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import ReviewsSection from "@/components/ReviewsSection";
+import Reveal from "@/components/Reveal";
+import HotelDialog from "@/components/HotelDialog";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { copy } from "@/lib/copy";
 import { trackVisit } from "@/lib/analytics";
+import { defaultRooms, hotelImages, imageSource, isHotelPhoto, loadRooms, loadSettings, subscribeHotel, type RoomData } from "@/lib/hotel";
 
-/**
- * Hotel Istiqlol Website - Home Page
- * Design: Central Asian Heritage & Modern Minimalism
- * Color Palette: Sand (#D4A574), Taupe (#8B7355), Blue (#2C5F7F), Cream (#FFFFFF)
- * Typography: Playfair Display (headings), Poppins (body)
- * Layout: Asymmetric with diagonal cuts and geometric patterns
- * Animations: Smooth scroll-triggered reveals, hover effects, transitions
- * Mobile-First: Fully responsive design optimized for phones
- * Languages: Uzbek, Russian, English
- */
-
-interface RoomData {
-  id: string;
-  name: string;
-  description: string;
-  image: string;
+function HotelIllustration() {
+  return <svg className="hotel-illustration" viewBox="0 0 360 270" fill="none" aria-hidden="true">
+    <path d="M22 250H338M55 250V65H305V250M44 65H316V41H44V65M70 41V24H290V41" />
+    <path d="M80 91H130V127H80V91ZM155 91H205V127H155V91ZM230 91H280V127H230V91ZM80 150H130V187H80V150ZM230 150H280V187H230V150ZM148 250V165H212V250M180 165V250" />
+    <path d="M38 250V217H63M298 250V217H323V250M44 217V201M317 217V201M62 77H297M70 137H290M70 199H140M220 199H290" />
+    <circle cx="31" cy="38" r="11" /><path d="M31 18V12M31 64V58M11 38H5M57 38H51M17 24L13 20M45 24L49 20" />
+  </svg>;
 }
-
-const defaultRooms: RoomData[] = [
-  {
-    id: "deluxe",
-    name: "Deluxe Xona",
-    description: "Yuqori darajali xona, katta oyna, zamonaviy jihozlar",
-    image: "https://avatars.mds.yandex.net/get-altay/5098065/2a00000181967c2e529094fc8b7196c16543/XXL_height",
-  },
-  {
-    id: "standard",
-    name: "Standard Xona",
-    description: "Qulay, toza, zamonaviy dizayn bilan",
-    image: "https://avatars.mds.yandex.net/get-altay/6057477/2a000001819974311cd47c77a79eece7fac1/XXL_height",
-  },
-];
-
-function loadRooms(): RoomData[] {
-  try {
-    const saved = localStorage.getItem("hotel_rooms");
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return defaultRooms;
-}
-
-function saveRooms(rooms: RoomData[]) {
-  localStorage.setItem("hotel_rooms", JSON.stringify(rooms));
+function RoomIllustration() {
+  return <div className="room-illustration" aria-hidden="true"><div className="room-grid-lines" /><BedDouble strokeWidth={0.65} /><span className="room-illustration-line" /></div>;
 }
 
 export default function Home() {
-  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
-  const [rooms, setRooms] = useState<RoomData[]>(loadRooms);
-  const [showPhone, setShowPhone] = useState(false);
+  const { language, t } = useLanguage();
+  const c = copy[language];
+  const [settings, setSettings] = useState(loadSettings);
+  const [rooms, setRooms] = useState(loadRooms);
+  const [menu, setMenu] = useState(false);
+  const [phone, setPhone] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<RoomData | null>(null);
+  const [photo, setPhoto] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
-  const [tapCount, setTapCount] = useState(0);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { t } = useLanguage();
-
-  const handleSecretTap = () => {
-    const next = tapCount + 1;
-    if (next >= 5) {
-      setTapCount(0);
-      window.location.href = "/admin";
-      return;
-    }
-    setTapCount(next);
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => setTapCount(0), 2000);
-  };
-
-  const handleCopyPhone = () => {
-    navigator.clipboard.writeText("+998771508160");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const taps = useRef(0);
+  const tapTime = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hero = useRef<HTMLElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll();
+  const progress = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
+  const { scrollYProgress: heroProgress } = useScroll({ target: hero, offset: ["start start", "end start"] });
+  const imageY = useTransform(heroProgress, [0, 1], [0, 65]);
+  const nav = ["rooms", "amenities", "location", "reviews"];
+  const gallery = Array.from(new Set([...settings.gallery, ...rooms.flatMap(r => [r.image, ...(r.images || [])]).filter(src => !isHotelPhoto(src))].filter(Boolean).map(imageSource)));
+  const roomName = (r: RoomData) => defaultRooms.some(d => d.id === r.id && d.name === r.name) ? t(`rooms.${r.id}`) : r.name;
+  const roomDescription = (r: RoomData) => defaultRooms.some(d => d.id === r.id && d.description === r.description) ? t(`rooms.${r.id}_desc`) : r.description;
+  const phoneLink = `tel:${settings.phone.replace(/[^+\d]/g, "")}`;
+  const routeLink = `https://www.google.com/maps/dir/?api=1&destination=${settings.latitude},${settings.longitude}&travelmode=driving`;
+  const mapLink = `https://www.openstreetmap.org/export/embed.html?bbox=${settings.longitude - 0.01}%2C${settings.latitude - 0.007}%2C${settings.longitude + 0.01}%2C${settings.latitude + 0.007}&layer=mapnik&marker=${settings.latitude}%2C${settings.longitude}`;
+  const photoLabel = (src: string) => src === hotelImages[0] ? c.interior : src === hotelImages[1] ? c.exterior : settings.name;
+  const amenities = [{ icon: Wifi, key: "wifi" }, { icon: Wind, key: "ac" }, { icon: CreditCard, key: "card" }];
 
   useEffect(() => {
-    trackVisit();
+    try { trackVisit(); } catch { /* Analytics cannot block the hotel website. */ }
+    const unsubscribe = subscribeHotel(() => { setRooms(loadRooms()); setSettings(loadSettings()); });
+    const keyboard = (e: KeyboardEvent) => { if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "a") { e.preventDefault(); window.location.href = "/admin"; } };
+    window.addEventListener("keydown", keyboard);
+    return () => { unsubscribe(); window.removeEventListener("keydown", keyboard); if (copyTimer.current) clearTimeout(copyTimer.current); };
   }, []);
-
+  useEffect(() => { setMenu(false); document.title = settings.name; }, [language, settings.name]);
   useEffect(() => {
-    const handleStorage = () => setRooms(loadRooms());
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  // Admin panel keyboard shortcut (Ctrl+Shift+A)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
-        e.preventDefault();
-        window.location.href = "/admin";
-      }
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(false);
+      if (photo === null || gallery.length === 0) return;
+      if (event.key === "ArrowRight") { event.preventDefault(); setPhoto(current => current === null ? null : (current + 1) % gallery.length); }
+      if (event.key === "ArrowLeft") { event.preventDefault(); setPhoto(current => current === null ? null : (current + gallery.length - 1) % gallery.length); }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [photo, gallery.length]);
+  const secretTap = () => {
+    const now = Date.now(); taps.current = now - tapTime.current < 2000 ? taps.current + 1 : 1; tapTime.current = now;
+    if (taps.current === 5) window.location.href = "/admin";
+  };
+  const copyPhone = async () => {
+    try { await navigator.clipboard.writeText(settings.phone); setCopied(true); if (copyTimer.current) clearTimeout(copyTimer.current); copyTimer.current = setTimeout(() => setCopied(false), 2000); }
+    catch { toast.error(c.copyError); }
+  };
+  const openPhoto = (src: string) => { const index = gallery.indexOf(imageSource(src)); if (index >= 0) setPhoto(index); };
 
-  const amenities = [
-    { icon: Wifi, name: t("amenities.wifi"), description: t("amenities.wifi_desc") },
-    { icon: Wind, name: t("amenities.ac"), description: t("amenities.ac_desc") },
-    { icon: CreditCard, name: t("amenities.card"), description: t("amenities.card_desc") },
-  ];
-
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Navigation - Mobile Optimized */}
-      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-14 md:h-16 px-4 md:px-0">
-          <div className="text-xl md:text-2xl font-bold text-primary">Istiqlol</div>
-          <div className="hidden md:flex gap-8 items-center">
-            <a 
-              href="#rooms" 
-              className="text-foreground hover:text-primary transition-colors duration-300 hover:underline underline-offset-4"
-            >
-              {t("nav.rooms")}
-            </a>
-            <a 
-              href="#amenities" 
-              className="text-foreground hover:text-primary transition-colors duration-300 hover:underline underline-offset-4"
-            >
-              {t("nav.amenities")}
-            </a>
-            <a 
-              href="#location" 
-              className="text-foreground hover:text-primary transition-colors duration-300 hover:underline underline-offset-4"
-            >
-              {t("nav.location")}
-            </a>
-            <a 
-              href="#reviews" 
-              className="text-foreground hover:text-primary transition-colors duration-300 hover:underline underline-offset-4"
-            >
-              {t("nav.reviews")}
-            </a>
-          </div>
-          {/* Language Switcher */}
-          <div className="flex gap-3 items-center">
-            <LanguageSwitcher />
-            <button onClick={() => setShowPhone(true)} className="p-2 hover:bg-secondary rounded-lg transition-colors md:hidden">
-              <Phone className="w-5 h-5 text-primary" />
-            </button>
-          </div>
+  return <div className="hotel-site">
+    <a className="skip-link" href="#main">{c.skip}</a>
+    <motion.div className="scroll-progress" style={{ scaleX: reduce ? scrollYProgress : progress }} />
+    <header className="site-header">
+      <div className="shell header-inner">
+        <a href="#" className="brand" aria-label={settings.name}><span className="brand-symbol" aria-hidden="true">I<span /></span><span className="brand-name">{settings.name}</span></a>
+        <nav className="desktop-nav" aria-label={c.menu}>{nav.map(n => <a key={n} href={`#${n}`}>{t(`nav.${n}`)}</a>)}</nav>
+        <div className="header-actions"><LanguageSwitcher /><button className="button button-dark header-book" onClick={() => setPhone(true)}>{c.book}<ArrowUpRight size={17} /></button><button className="icon-button menu-toggle" aria-label={c.menu} aria-expanded={menu} aria-controls="mobile-nav" onClick={() => setMenu(!menu)}>{menu ? <X /> : <Menu />}</button></div>
+      </div>
+      <AnimatePresence>{menu && <motion.nav id="mobile-nav" className="mobile-nav" aria-label={c.menu} initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: reduce ? 0 : 0.25 }}>{nav.map(n => <a key={n} href={`#${n}`} onClick={() => setMenu(false)}>{t(`nav.${n}`)}<ArrowUpRight size={18} /></a>)}<button onClick={() => { setMenu(false); setPhone(true); }}>{c.book}<Phone size={18} /></button></motion.nav>}</AnimatePresence>
+    </header>
+    <main id="main">
+      <section className="hero" ref={hero}>
+        <motion.div className="hero-visual" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.9 }}>
+          <motion.img src={imageSource(settings.heroImage)} alt={isHotelPhoto(settings.heroImage) ? photoLabel(imageSource(settings.heroImage)) : settings.name} fetchPriority="high" style={{ y: reduce ? 0 : imageY }} />
+          <div className="hero-image-shade" />
+        </motion.div>
+        <div className="hero-content shell">
+          <Reveal className="hero-copy"><p className="eyebrow"><span />{settings.address[language]}</p><h1>{settings.name}</h1><p className="hero-intro">{settings.subtitle[language]}</p><div className="hero-actions"><button className="button button-blue" onClick={() => setPhone(true)}>{c.book}<ArrowUpRight size={20} /></button><a className="hero-explore" href="#rooms">{c.explore}<ArrowRight size={19} /></a></div></Reveal>
+          <div className="hero-bottom"><a className="scroll-cue" href="#about"><span>{t("about.title")}</span><ArrowDown size={19} /></a>{gallery.length > 0 && <button className="hero-gallery" onClick={() => setPhoto(0)}><Images size={18} /><span>{c.allPhotos}</span><ArrowUpRight size={16} /></button>}</div>
         </div>
-      </nav>
+        <div className="hero-side-label" aria-hidden="true">{settings.name.toLocaleUpperCase()}</div>
+      </section>
+      <div className="amenity-strip"><div className="shell">{amenities.map(({ icon: Icon, key }) => <a key={key} href="#amenities"><Icon size={20} strokeWidth={1.5} /><span>{t(`amenities.${key}`)}</span><ArrowUpRight size={15} /></a>)}</div></div>
 
-      {/* Hero Section with Diagonal Cut - Mobile Optimized */}
-      <section className="relative h-[400px] md:h-[600px] overflow-hidden">
-        <img
-          src="https://avatars.mds.yandex.net/get-altay/6057477/2a000001819974311cd47c77a79eece7fac1/XXL_height"
-          alt={t("hero.title")}
-          className="w-full h-full object-cover animate-in fade-in duration-1000"
-        />
-        {/* Diagonal overlay with geometric pattern */}
-        <div
-          className="absolute inset-0 bg-gradient-to-r from-black/40 to-transparent"
-          style={{
-            clipPath: "polygon(0 0, 100% 0, 100% 85%, 0 100%)",
-          }}
-        />
-        {/* Content */}
-        <div className="absolute inset-0 flex flex-col justify-center items-start px-4 md:px-0">
-          <div className="max-w-2xl animate-in fade-in slide-in-from-left-8 duration-1000 fill-mode-both">
-            <h1 className="text-4xl md:text-7xl font-bold text-white mb-4 md:mb-6 leading-tight">
-              {t("hero.title")}
-            </h1>
-            <p className="text-base md:text-xl text-white/90 mb-6 md:mb-8 font-light">
-              {t("hero.subtitle")}
-            </p>
-            <Button
-              size="lg"
-              onClick={() => setShowPhone(true)}
-              className="bg-primary hover:bg-primary/90 text-white text-base md:text-lg px-6 md:px-8 py-5 md:py-6 rounded-lg transition-all hover:scale-105 active:scale-97 duration-200 w-full md:w-auto"
-            >
-              {t("hero.button")}
-            </Button>
-          </div>
-        </div>
+      <section id="about" className="section shell about-grid">
+        <Reveal className="about-copy"><p className="eyebrow"><span className="section-number">01</span>{t("about.title")}</p><h2>{settings.subtitle[language]}</h2><p>{settings.about[language]}</p><p>{t("about.desc2")}</p><a className="text-link" href="#rooms">{c.explore}<ArrowUpRight size={20} /></a><div className="about-bottom"><span>{settings.name}</span><HotelIllustration /></div></Reveal>
+        <Reveal className="about-image" delay={0.1}><button onClick={() => openPhoto(settings.gallery[0] || settings.heroImage)} aria-label={c.photo}><img src={imageSource(settings.gallery[0] || settings.heroImage)} alt={photoLabel(imageSource(settings.gallery[0] || settings.heroImage))} loading="lazy" /><span className="image-open"><ArrowUpRight size={21} /></span></button><div className="image-caption"><span>{photoLabel(imageSource(settings.gallery[0] || settings.heroImage))}</span><span>01 / {String(gallery.length).padStart(2, "0")}</span></div></Reveal>
       </section>
 
-      {/* Geometric Divider */}
-      <div className="h-12 md:h-20 bg-gradient-to-b from-transparent to-secondary/20" />
+      <section id="rooms" className="section rooms-section"><div className="shell">
+        <Reveal className="section-heading"><div><p className="eyebrow"><span className="section-number">02</span>{c.roomTypes}</p><h2>{t("rooms.title")}</h2></div><p>{t("rooms.subtitle")}</p></Reveal>
+        <div className="rooms-grid">{rooms.map((r, i) => <Reveal key={r.id} delay={Math.min(i * 0.08, 0.3)}><motion.article className="room-card" whileHover={reduce ? undefined : { y: -6 }} transition={{ duration: 0.25 }}>
+          <button className={`room-photo ${isHotelPhoto(r.image) || !r.image ? "room-photo-illustrated" : ""}`} onClick={() => setSelectedRoom(r)} aria-label={`${c.details}: ${roomName(r)}`}>
+            {r.image && !isHotelPhoto(r.image) ? <img src={imageSource(r.image)} alt={roomName(r)} loading="lazy" /> : <RoomIllustration />}
+            <span className="room-tag">{String(i + 1).padStart(2, "0")}</span><span className="photo-arrow"><ArrowUpRight size={23} /></span>
+          </button>
+          <div className="room-info"><h3>{roomName(r)}</h3><p>{roomDescription(r)}</p><div className="room-meta"><span><Wifi size={15} />Wi-Fi</span><span><Wind size={15} />{t("amenities.ac")}</span></div><div className="room-actions"><button className="text-link" onClick={() => setSelectedRoom(r)}>{c.details}<ArrowRight size={18} /></button><button className="room-book" onClick={() => setPhone(true)}>{c.book}<ArrowUpRight size={18} /></button></div></div>
+        </motion.article></Reveal>)}</div>{rooms.length === 0 && <p className="empty-state">{c.roomsEmpty}</p>}
+      </div></section>
 
-      {/* About Section - Mobile Optimized */}
-      <section className="py-12 md:py-20 bg-white">
-        <div className="container px-4 md:px-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center">
-            <div className="animate-in fade-in slide-in-from-left-8 duration-700 fill-mode-both order-2 md:order-1">
-              <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-4 md:mb-6">
-                {t("about.title")}
-              </h2>
-              <p className="text-base md:text-lg text-muted-foreground mb-4 md:mb-6 leading-relaxed">
-                {t("about.desc1")}
-              </p>
-              <p className="text-base md:text-lg text-muted-foreground mb-6 md:mb-8 leading-relaxed">
-                {t("about.desc2")}
-              </p>
-              <div className="flex gap-6 md:gap-6">
-                <div className="hover:scale-105 transition-transform duration-300">
-                  <div className="text-3xl md:text-4xl font-bold text-primary flex items-center gap-1">
-                    4.4 <Star className="w-6 h-6 fill-primary" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">{t("about.rating")}</p>
-                </div>
-                <div className="hover:scale-105 transition-transform duration-300">
-                  <div className="text-3xl md:text-4xl font-bold text-primary">41</div>
-                  <p className="text-sm text-muted-foreground">{t("about.reviews")}</p>
-                </div>
-              </div>
-            </div>
-            <img
-              src="https://avatars.mds.yandex.net/get-altay/5098065/2a00000181967c2e529094fc8b7196c16543/XXL_height"
-              alt={t("about.title")}
-              className="rounded-lg shadow-lg animate-in fade-in slide-in-from-right-8 duration-700 fill-mode-both hover:shadow-2xl transition-shadow duration-300 order-1 md:order-2"
-            />
-          </div>
-        </div>
+      <section id="amenities" className="section shell amenities-section">
+        <Reveal className="section-heading"><div><p className="eyebrow"><span className="section-number">03</span>{t("nav.amenities")}</p><h2>{t("amenities.title")}</h2></div><p>{t("amenities.subtitle")}</p></Reveal>
+        <div className="amenities-grid">{amenities.map(({ icon: Icon, key }, i) => <Reveal key={key} delay={i * 0.1}><div className="amenity"><span className="amenity-index">0{i + 1}</span><span className="amenity-icon"><Icon size={31} strokeWidth={1.4} /></span><h3>{t(`amenities.${key}`)}</h3><p>{t(`amenities.${key}_desc`)}</p><span className="amenity-decoration" aria-hidden="true" /></div></Reveal>)}</div>
       </section>
 
-      {/* Rooms Section - Mobile Optimized */}
-      <section id="rooms" className="py-12 md:py-20 bg-secondary/10">
-        <div className="container px-4 md:px-0">
-          <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-2 md:mb-4 text-center animate-in fade-in duration-700 fill-mode-both">
-            {t("rooms.title")}
-          </h2>
-          <p className="text-center text-muted-foreground mb-10 md:mb-16 text-base md:text-lg animate-in fade-in duration-700 fill-mode-both delay-100">
-            {t("rooms.subtitle")}
-          </p>
+      {gallery.length > 0 && <section id="gallery" className="section gallery-section"><div className="shell"><Reveal className="section-heading"><div><p className="eyebrow"><span className="section-number">04</span>{settings.name}</p><h2>{c.gallery}</h2></div><span className="gallery-count">{String(gallery.length).padStart(2, "0")}<Images size={24} strokeWidth={1.2} /></span></Reveal><div className="gallery-grid">{gallery.map((src, i) => <Reveal key={src} delay={Math.min(i * 0.1, 0.3)}><button className="gallery-photo" onClick={() => setPhoto(i)} aria-label={`${c.photo} ${i + 1}`}><img src={src} alt={photoLabel(src)} loading="lazy" /><span className="gallery-caption"><span><small>{String(i + 1).padStart(2, "0")}</small>{photoLabel(src)}</span><ArrowUpRight size={26} /></span></button></Reveal>)}</div></div></section>}
 
-          <div className={`grid grid-cols-1 ${rooms.length >= 3 ? "md:grid-cols-2 lg:grid-cols-3" : "md:grid-cols-2"} gap-6 md:gap-8`}>
-            {rooms.map((room, idx) => (
-              <Card
-                key={room.id}
-                className="overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:translate-x-2 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both"
-                style={{ animationDelay: `${idx * 100}ms` }}
-                onClick={() => setSelectedRoom(selectedRoom === room.id ? null : room.id)}
-              >
-                <div className="relative h-48 md:h-64 overflow-hidden">
-                  <img
-                    src={room.image}
-                    alt={room.name}
-                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-                <div className="p-4 md:p-6">
-                  <h3 className="text-xl md:text-2xl font-bold text-foreground mb-2">
-                    {room.name}
-                  </h3>
-                  <p className="text-sm md:text-base text-muted-foreground mb-4">
-                    {room.description}
-                  </p>
-                  {selectedRoom === room.id && (
-                    <div className="mt-4 pt-4 border-t border-border animate-in fade-in duration-300">
-                      <ul className="space-y-2 text-xs md:text-sm text-muted-foreground">
-                        <li className="animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both">{t("rooms.amenities")}</li>
-                        <li className="animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both delay-75">{t("rooms.wifi")}</li>
-                        <li className="animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both delay-150">{t("rooms.ac")}</li>
-                        <li className="animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both delay-200">{t("rooms.bathroom")}</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+      <section id="location" className="section location-section"><div className="shell location-grid"><Reveal><p className="eyebrow"><span className="section-number">05</span>{t("nav.location")}</p><h2>{t("location.title")}</h2><div className="location-detail"><MapPin size={22} strokeWidth={1.3} /><div><span>{t("location.address")}</span><p>{settings.address[language]}</p></div></div><div className="location-detail"><Phone size={22} strokeWidth={1.3} /><div><span>{t("location.phone")}</span><a href={phoneLink}>{settings.phone}</a></div></div><a className="button button-blue" href={routeLink} target="_blank" rel="noopener noreferrer">{t("location.route")}<ArrowUpRight size={20} /></a></Reveal><Reveal className="map-wrap"><iframe src={mapLink} loading="lazy" title={t("location.title")} /><div className="map-label"><span className="map-dot" /><div>{settings.name}<small>{settings.address[language]}</small></div></div></Reveal></div></section>
+      <ReviewsSection />
+      <section id="contact" className="contact-section"><div className="shell"><Reveal className="contact-inner"><div><p className="eyebrow">{settings.name}</p><h2>{t("contact.title")}</h2><p>{t("contact.subtitle")}</p><a className="contact-phone" href={phoneLink}>{settings.phone}<ArrowUpRight size={36} /></a><button className="button button-white" onClick={() => setPhone(true)}>{c.book}<ArrowUpRight size={20} /></button></div><div className="contact-art"><HotelIllustration /></div></Reveal></div></section>
+    </main>
 
-      {/* Amenities Section - Mobile Optimized */}
-      <section id="amenities" className="py-12 md:py-20 bg-white">
-        <div className="container px-4 md:px-0">
-          <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-2 md:mb-4 text-center animate-in fade-in duration-700 fill-mode-both">
-            {t("amenities.title")}
-          </h2>
-          <p className="text-center text-muted-foreground mb-10 md:mb-16 text-base md:text-lg animate-in fade-in duration-700 fill-mode-both delay-100">
-            {t("amenities.subtitle")}
-          </p>
+    <footer className="site-footer"><div className="shell"><div className="footer-top"><a href="#" className="brand"><span className="brand-symbol" aria-hidden="true">I<span /></span><span className="brand-name">{settings.name}</span></a><nav aria-label={t("footer.links")}>{nav.map(n => <a key={n} href={`#${n}`}>{t(`nav.${n}`)}</a>)}</nav><a className="footer-phone" href={phoneLink}>{settings.phone}<ArrowUpRight size={17} /></a></div><div className="footer-bottom"><p onClick={secretTap}>© {new Date().getFullYear()} {settings.name}</p><span>{settings.address[language]}</span></div></div></footer>
+    <div className="mobile-booking"><span>{settings.name}</span><button className="button button-blue" onClick={() => setPhone(true)}>{c.book}<Phone size={16} /></button></div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
-            {amenities.map((amenity, idx) => {
-              const Icon = amenity.icon;
-              return (
-                <div
-                  key={idx}
-                  className="text-center p-4 md:p-6 rounded-lg bg-secondary/10 hover:bg-secondary/20 transition-all duration-300 hover:shadow-md hover:scale-105 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both"
-                  style={{ animationDelay: `${idx * 75}ms` }}
-                >
-                  <Icon className="w-10 md:w-12 h-10 md:h-12 text-primary mx-auto mb-3 md:mb-4 animate-in zoom-in duration-500" />
-                  <h3 className="text-lg md:text-xl font-bold text-foreground mb-2">
-                    {amenity.name}
-                  </h3>
-                  <p className="text-sm md:text-base text-muted-foreground">
-                    {amenity.description}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Location Section with Map - Mobile Optimized */}
-      <section id="location" className="py-12 md:py-20 bg-secondary/10">
-        <div className="container px-4 md:px-0">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 items-start mb-12 md:mb-16">
-            <div className="animate-in fade-in slide-in-from-left-8 duration-700 fill-mode-both">
-              <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-4 md:mb-6">
-                {t("location.title")}
-              </h2>
-              <p className="text-base md:text-lg text-muted-foreground mb-6 md:mb-8 leading-relaxed">
-                {t("location.desc")}
-              </p>
-              <div className="space-y-4">
-                <div className="flex gap-4 items-start hover:translate-x-2 transition-transform duration-300">
-                  <MapPin className="w-5 md:w-6 h-5 md:h-6 text-primary flex-shrink-0 mt-1" />
-                  <div>
-                    <p className="font-semibold text-foreground text-sm md:text-base">{t("location.address")}</p>
-                    <p className="text-muted-foreground text-sm md:text-base">{t("location.address_value")}</p>
-                  </div>
-                </div>
-                <div className="flex gap-4 items-start hover:translate-x-2 transition-transform duration-300">
-                  <Phone className="w-5 md:w-6 h-5 md:h-6 text-primary flex-shrink-0 mt-1" />
-                  <div>
-                    <p className="font-semibold text-foreground text-sm md:text-base">{t("location.phone")}</p>
-                    <a href="tel:+998771508160" className="text-primary hover:underline text-sm md:text-base">
-                      +998 77 150 81 60
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="animate-in fade-in slide-in-from-right-8 duration-700 fill-mode-both relative group">
-              <iframe
-                src="https://www.openstreetmap.org/export/embed.html?bbox=66.547%2C38.335%2C66.567%2C38.348&layer=mapnik&marker=38.341547%2C66.557003"
-                className="w-full h-[400px] md:h-[500px] rounded-lg shadow-lg border-0"
-                loading="lazy"
-                title="Hotel Istiqlol - Joylashuvi"
-              />
-              <a
-                href="https://www.google.com/maps/dir/?api=1&destination=38.341547,66.557003&travelmode=driving"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 transition-all hover:scale-105 text-sm md:text-base font-semibold"
-              >
-                <MapPin className="w-5 h-5" />
-                {t("location.route")}
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Reviews Section */}
-      <section id="reviews">
-        <ReviewsSection />
-      </section>
-
-      {/* Contact Section - Mobile Optimized */}
-      <section className="py-12 md:py-20 bg-primary text-white">
-        <div className="container px-4 md:px-0 text-center">
-          <h2 className="text-3xl md:text-5xl font-bold mb-4 md:mb-6 animate-in fade-in duration-700 fill-mode-both">
-            {t("contact.title")}
-          </h2>
-          <p className="text-base md:text-xl text-white/90 mb-10 md:mb-12 max-w-2xl mx-auto animate-in fade-in duration-700 fill-mode-both delay-100">
-            {t("contact.subtitle")}
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-2xl mx-auto mb-10 md:mb-12">
-            <div onClick={() => setShowPhone(true)} className="hover:scale-105 transition-transform duration-300 cursor-pointer">
-              <div className="bg-white/10 backdrop-blur-sm p-6 md:p-8 rounded-lg hover:bg-white/20 transition-all duration-300">
-                <Phone className="w-8 h-8 mx-auto mb-4 animate-in zoom-in duration-500" />
-                <p className="text-base md:text-lg font-semibold mb-2">{t("contact.phone")}</p>
-                <p className="text-white/90">+998 77 150 81 60</p>
-              </div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm p-6 md:p-8 rounded-lg hover:bg-white/20 transition-all duration-300 hover:scale-105 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-100">
-              <MapPin className="w-8 h-8 mx-auto mb-4 animate-in zoom-in duration-500" />
-              <p className="text-base md:text-lg font-semibold mb-2">{t("contact.address")}</p>
-              <p className="text-white/90">{t("contact.address_value")}</p>
-            </div>
-          </div>
-
-          <Button
-            size="lg"
-            onClick={() => setShowPhone(true)}
-            className="bg-white text-primary hover:bg-white/90 text-base md:text-lg px-6 md:px-8 py-5 md:py-6 rounded-lg transition-all hover:scale-105 active:scale-97 duration-200 w-full md:w-auto animate-in fade-in duration-700 fill-mode-both delay-200"
-          >
-            {t("hero.button")}
-          </Button>
-        </div>
-      </section>
-
-      {/* Footer - Mobile Optimized */}
-      <footer className="bg-foreground text-white/80 py-8 md:py-12">
-        <div className="container px-4 md:px-0">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 mb-6 md:mb-8">
-            <div className="animate-in fade-in duration-700 fill-mode-both">
-              <h3 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">{t("footer.title")}</h3>
-              <p className="text-sm md:text-base text-white/70">
-                {t("footer.desc")}
-              </p>
-            </div>
-            <div className="animate-in fade-in duration-700 fill-mode-both delay-75">
-              <h4 className="text-base md:text-lg font-semibold text-white mb-3 md:mb-4">{t("footer.links")}</h4>
-              <ul className="space-y-2 text-sm md:text-base text-white/70">
-                <li><a href="#rooms" className="hover:text-white transition-colors duration-300">{t("nav.rooms")}</a></li>
-                <li><a href="#amenities" className="hover:text-white transition-colors duration-300">{t("nav.amenities")}</a></li>
-                <li><a href="#location" className="hover:text-white transition-colors duration-300">{t("nav.location")}</a></li>
-                <li><a href="#reviews" className="hover:text-white transition-colors duration-300">{t("nav.reviews")}</a></li>
-              </ul>
-            </div>
-            <div className="animate-in fade-in duration-700 fill-mode-both delay-150">
-              <h4 className="text-base md:text-lg font-semibold text-white mb-3 md:mb-4">{t("footer.contact")}</h4>
-              <p className="text-sm md:text-base text-white/70 mb-2">
-                <button onClick={() => setShowPhone(true)} className="hover:text-white transition-colors">
-                  +998 77 150 81 60
-                </button>
-              </p>
-              <p className="text-sm md:text-base text-white/70">{t("contact.address_value")}</p>
-            </div>
-          </div>
-          <div className="border-t border-white/10 pt-6 md:pt-8 text-center text-xs md:text-sm text-white/60">
-            <p onClick={handleSecretTap} className="select-none">{t("footer.copyright")}</p>
-          </div>
-        </div>
-      </footer>
-
-      {/* Phone Modal */}
-      {showPhone && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setShowPhone(false)}>
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" />
-          <div
-            className="relative bg-white rounded-2xl shadow-2xl p-6 md:p-8 max-w-md w-full animate-in fade-in zoom-in-95 duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowPhone(false)}
-              className="absolute top-4 right-4 p-1 rounded-full hover:bg-secondary/20 transition-colors"
-            >
-              <X className="w-5 h-5 text-muted-foreground" />
-            </button>
-
-            <div className="text-center">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Phone className="w-8 h-8 text-primary" />
-              </div>
-              <h3 className="text-2xl font-bold text-foreground mb-2">{t("hero.button")}</h3>
-              <p className="text-muted-foreground mb-6">{t("contact.subtitle")}</p>
-
-              <div className="bg-secondary/10 rounded-xl p-4 mb-6">
-                <p className="text-sm text-muted-foreground mb-1">{t("contact.phone")}</p>
-                <p className="text-2xl md:text-3xl font-bold text-primary tracking-wide">
-                  +998 77 150 81 60
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <a
-                  href="tel:+998771508160"
-                  className="flex-1"
-                >
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-white py-3">
-                    <Phone className="w-4 h-4 mr-2" />
-                    {t("contact.phone")}
-                  </Button>
-                </a>
-                <Button
-                  variant="outline"
-                  onClick={handleCopyPhone}
-                  className="px-4 py-3"
-                >
-                  {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                </Button>
-              </div>
-
-              <p className="text-xs text-muted-foreground mt-4">
-                {t("location.address_value")}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    {phone && <HotelDialog title={c.book} onClose={() => { setPhone(false); setCopied(false); }}><div className="phone-dialog"><span className="dialog-icon"><Phone size={28} strokeWidth={1.3} /></span><p className="eyebrow">{settings.name}</p><h2>{c.book}</h2><p>{t("contact.subtitle")}</p><a className="dialog-phone" href={phoneLink}>{settings.phone}</a><a className="button button-blue" href={phoneLink}><Phone size={18} />{c.call}</a><button className="text-link copy-phone" onClick={copyPhone}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? c.copied : c.copy}</button><small>{settings.address[language]}</small></div></HotelDialog>}
+    {selectedRoom && <HotelDialog title={roomName(selectedRoom)} onClose={() => setSelectedRoom(null)}>
+      {selectedRoom.image && !isHotelPhoto(selectedRoom.image) ? <img className="dialog-room-image" src={imageSource(selectedRoom.image)} alt={roomName(selectedRoom)} /> : <RoomIllustration />}
+      <div className="dialog-room-body"><p className="eyebrow">{settings.name} / {c.details}</p><h2>{roomName(selectedRoom)}</h2><p>{roomDescription(selectedRoom)}</p><ul className="room-features">{["amenities", "wifi", "ac", "bathroom"].map(key => <li key={key}>{t(`rooms.${key}`)}</li>)}</ul>
+        {selectedRoom.images?.length ? <div className="room-detail-gallery">{selectedRoom.images.map((src, i) => <button key={`${src}-${i}`} aria-label={`${c.photo} ${i + 1}`} onClick={() => { setSelectedRoom(null); openPhoto(src); }}><img src={imageSource(src)} alt={`${roomName(selectedRoom)} ${i + 1}`} loading="lazy" /></button>)}</div> : null}
+        {selectedRoom.videos?.map((src, i) => <video className="room-video" key={`${src}-${i}`} controls preload="metadata" src={src} aria-label={`${roomName(selectedRoom)} ${i + 1}`} />)}
+        <button className="button button-blue" onClick={() => { setSelectedRoom(null); setPhone(true); }}>{c.book}<ArrowUpRight size={20} /></button>
+      </div>
+    </HotelDialog>}
+    {photo !== null && gallery[photo] && <HotelDialog title={c.gallery} onClose={() => setPhoto(null)}><div className="lightbox"><AnimatePresence mode="wait"><motion.img key={gallery[photo]} src={gallery[photo]} alt={photoLabel(gallery[photo])} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0 : 0.18 }} /></AnimatePresence><div className="lightbox-controls"><button className="icon-button" aria-label={c.previous} onClick={() => setPhoto((photo + gallery.length - 1) % gallery.length)}><ChevronLeft /></button><span>{photoLabel(gallery[photo])} · {photo + 1} / {gallery.length}</span><button className="icon-button" aria-label={c.next} onClick={() => setPhoto((photo + 1) % gallery.length)}><ChevronRight /></button></div></div></HotelDialog>}
+  </div>;
 }
